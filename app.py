@@ -6,6 +6,7 @@ from cryptography.hazmat.backends import default_backend
 from flask_sqlalchemy import SQLAlchemy
 from flask_migrate import Migrate
 import pymysql
+import secrets
 
 
 app = Flask(__name__)
@@ -36,7 +37,7 @@ def create_connection():
 class CardDetails(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     encrypted_card_details = db.Column(db.String(256))
-    encrypted_symmetric_key = db.Column(db.String(256))
+    encrypted_symmetric_key = db.Column(db.String(512))
 
     def __init__(self, encrypted_card_details, encrypted_symmetric_key):
         self.encrypted_card_details = encrypted_card_details
@@ -61,19 +62,27 @@ def check_db_connection():
     except pymysql.Error as e:
         return jsonify(status="Error", message=str(e))
     
-##################################################################
 private_key = None
 public_key = None
-symmetric_key = b'SuperSecretKey123'  # Replace with a securely generated key
-   
+# Generate a secure random key
+symmetric_key = secrets.token_bytes(16)
+# for example# symmetric_key = b'SuperSecretKey123'  # Replace with a securely generated key
+print(symmetric_key,"-------------------")
+
+
+
+# ...
+
 def generate_rsa_keys():
     global private_key, public_key
     private_key = rsa.generate_private_key(
         public_exponent=65537,
         key_size=2048
     )
-    public_key = private_key.public_key
-    
+    public_key = private_key.public_key()
+    return private_key, public_key
+
+
 @app.route('/generate_keys', methods=['GET'])
 def generate_keys():
     generate_rsa_keys()
@@ -82,12 +91,39 @@ def generate_keys():
     return jsonify(
         message = 'rsa key generated sucessfully'
         ), 200
-   
-   
-   
-   
-   
-   
+    
+@app.route('/encrypt', methods=['POST'])
+def encrypt():
+    card_details = request.json.get('card_details')
+    
+    if not card_details:
+        return jsonify({'error': 'Missing card details'}), 400
+    
+    private_key, public_key = generate_rsa_keys()
+    if not public_key:
+        return jsonify({'error': 'RSA key not generated'}), 400
+    
+    cipher = Cipher(algorithms.AES(symmetric_key), modes.ECB(), backend=default_backend())
+    encryptor = cipher.encryptor()
+    padded_card_details = card_details.encode('utf-8').rjust(32)
+    encrypted_card_details = encryptor.update(padded_card_details) + encryptor.finalize()
+    encrypted_symmetric_key = public_key.encrypt(
+        symmetric_key,
+        padding.OAEP(
+            mgf=padding.MGF1(algorithm=hashes.SHA256()),
+            algorithm=hashes.SHA256(),
+            label=None
+        )
+    )
+    card = CardDetails(encrypted_card_details.hex(), encrypted_symmetric_key.hex())
+    db.session.add(card)
+    db.session.commit()
+    
+    return jsonify({
+        'encrypted_card_details': encrypted_card_details.hex(),
+        'encrypted_symmetric_key': encrypted_symmetric_key.hex()
+    })
+
     
 if __name__ == '__main__':
     app.run(debug=True)
