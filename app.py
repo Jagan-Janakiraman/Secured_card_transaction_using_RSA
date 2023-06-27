@@ -1,4 +1,8 @@
 from flask import Flask, request, jsonify
+from cryptography.hazmat.primitives import serialization, hashes
+from cryptography.hazmat.primitives.asymmetric import rsa, padding
+from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
+from cryptography.hazmat.backends import default_backend
 from flask_sqlalchemy import SQLAlchemy
 from flask_migrate import Migrate
 import pymysql
@@ -28,7 +32,15 @@ def create_connection():
         print(f"Error while connecting to MySQL database: {e}")
     return connection
 
+# database for card details
+class CardDetails(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    encrypted_card_details = db.Column(db.String(256))
+    encrypted_symmetric_key = db.Column(db.String(256))
 
+    def __init__(self, encrypted_card_details, encrypted_symmetric_key):
+        self.encrypted_card_details = encrypted_card_details
+        self.encrypted_symmetric_key = encrypted_symmetric_key
 
 
 # to check the database connection
@@ -48,6 +60,30 @@ def check_db_connection():
         return jsonify(status="Connected", database=connected_database, tables=table_names)
     except pymysql.Error as e:
         return jsonify(status="Error", message=str(e))
+    
+##################################################################
+private_key = None
+public_key = None
+symmetric_key = b'SuperSecretKey123'  # Replace with a securely generated key
+   
+def generate_rsa_keys():
+    global private_key, public_key
+    private_key = rsa.generate_private_key(
+        public_exponent=65537,
+        key_size=2048
+    )
+    public_key = private_key.public_key
+    
+@app.route('/generate_keys', methods=['GET'])
+def generate_keys():
+    generate_rsa_keys()
+    print(public_key)
+    print(private_key)
+    return jsonify(
+        message = 'rsa key generated sucessfully'
+        ), 200
+   
+   
    
    
    
