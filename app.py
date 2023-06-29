@@ -61,17 +61,13 @@ def check_db_connection():
         return jsonify(status="Connected", database=connected_database, tables=table_names)
     except pymysql.Error as e:
         return jsonify(status="Error", message=str(e))
-    
+
+
 private_key = None
 public_key = None
 # Generate a secure random key
 symmetric_key = secrets.token_bytes(16)
-# for example# symmetric_key = b'SuperSecretKey123'  # Replace with a securely generated key
-print(symmetric_key,"-------------------")
 
-
-
-# ...
 
 def generate_rsa_keys():
     global private_key, public_key
@@ -124,6 +120,40 @@ def encrypt():
         'encrypted_symmetric_key': encrypted_symmetric_key.hex()
     })
 
+
+@app.route('/decrypt', methods=['POST'])
+def decrypt():
+    encrypted_card_details = request.json.get('encrypted_card_details')
+    encrypted_symmetric_key = request.json.get('encrypted_symmetric_key')
     
+    if not encrypted_card_details or not encrypted_symmetric_key:
+        return jsonify({'message':'Missing encrypted card details or symmetric key.'}), 400
+    
+    if not private_key:
+        return jsonify({'message':'RSA key not genereted.'}), 400
+        
+
+    decrypted_symmetric_key = private_key.decrypt(
+        bytes.fromhex(encrypted_symmetric_key),
+        padding.OAEP(
+            mgf=padding.MGF1(algorithm=hashes.SHA256()),
+            algorithm=hashes.SHA256(),
+            label=None
+        )
+    )
+
+    decipher = Cipher(algorithms.AES(decrypted_symmetric_key), modes.ECB(), backend=default_backend())
+    decryptor = decipher.decryptor()
+    decrypted_card_details = decryptor.update(bytes.fromhex(encrypted_card_details)) + decryptor.finalize()
+
+    # Decode the decrypted binary data using UTF-8 to obtain the original string
+    decrypted_card_details = decrypted_card_details.decode('utf-8').strip()
+
+    return jsonify({
+        'decrypted_card_details': decrypted_card_details
+    })
+
+
+
 if __name__ == '__main__':
     app.run(debug=True)
